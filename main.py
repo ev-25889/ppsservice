@@ -2,6 +2,7 @@ import psycopg2
 import requests
 import pandas as pd 
 import json
+from config import bd
 from itertools import groupby
 from datetime import date, datetime, timedelta, tzinfo, timezone
 
@@ -11,7 +12,8 @@ def create_body():
                              , it.firstname_p
                              , it.middlename_p
                              , it.birthdate_p
-		                     , e.shorttitle_p as title
+                                 , e.shorttitle_p as title
+                             --, it.guid_p                 
                         from epp_real_edu_group_t eregt
                         join realedugroup2ppsentry_t rpt on rpt.edugroup_id = eregt.id
                         join pps_entry_base_t pebt on rpt.pps_id = pebt.id
@@ -30,45 +32,43 @@ def create_body():
                         join edu_c_pr_subject_t ecpst on ecpst.id = ecpsqt.programsubject_id
                         join developperiod_t dt on dt.id = e.developperiod_id
                         order by it.lastname_p
-                        limit 5'''
+                        '''
 
-    connection = psycopg2.connect(user='tandemdb', password='FEfs$*dcn2slts',
-                                  host='192.168.25.101', port='5432', database='tdmdb')
+    connection = psycopg2.connect(user=bd['TandemBD']['user'], password=bd['TandemBD']['password'],
+                                  host=bd['TandemBD']['host'], port=bd['TandemBD']['port'],
+                                  database=bd['TandemBD']['database'])
     cursor = connection.cursor()
     cursor.execute(select_query)
     select = cursor.fetchall()
-    #print(select[0])
-    #print(select[0][0], select[0][1], select[0][2],select[0][3])
     columns = ['Фамилия', 'Имя', 'Отчество', 'Дата рождения', 'Образовательная программа']
     df = pd.DataFrame(select, columns=columns)
-    #print(df)
     res = (df.groupby(['Фамилия','Имя','Отчество', 'Дата рождения'])
          [['Образовательная программа']]
-         .apply(lambda x: tuple(x.values))
-         .reset_index(name='eduprogram'))
-    print(res.dtypes) 
-    print(res)
-    res = res.astype({'Фамилия': str, 'Имя': str, 'Отчество': str})
-    print(res.dtypes) 
+         .apply(lambda x: list(x.values))
+         .reset_index(name='Образовательная программа'))    
+    res[['Дата рождения']] = res[['Дата рождения']].apply (pd.to_datetime)
+    pd.to_datetime(res['Дата рождения'], format='%Y-%m-%d')
+    res['Дата рождения'] = res['Дата рождения'].astype(str)
+    d = res.to_dict('records')
+    #print(type(d), d)
+    for i in range(len(d)):
+      #print(len(d[i]['Образовательная программа']))
+      d[i]['eduprogram'] = list()
+      for j in range(len(d[i]['Образовательная программа'])):
+        #print(d[i]['Образовательная программа'][j][0])
+        dict_j = dict()
+        dict_j[str(j + 1)] = d[i]['Образовательная программа'][j][0]
+        d[i]['eduprogram'].append(dict_j)
+      d[i].pop('Образовательная программа')
+    #print(d)
+    body = json.dumps(d, ensure_ascii=False).encode('utf8')
+    return body.decode()
 
-        
-    #res.to_dict('records')
-    
-    
-    #print('res: ', res, type(res))
-    #result = res.to_dict('records')
-    #jsonStr = json.dumps(result)
-    #jsonStr = json.dumps(result, indent=4, sort_keys=True, default=str, encode='utf8')
-    #print(jsonStr)
-    
-    
-    
-
-def send_request():
+def send_request(body):
     session = requests.session()
-    endpoint = "https://test.usla.ru/api/updateusereduprogram/"
+    endpoint = "https://test.usla.ru/api/updateuserep/" 
     session.headers = {"Content-Type": "application/json; charset=utf-8","Authorization":"Bearer E1F3HDYw5qgfpDw05z5cM?Tvqy2K-CaAOKjb2o70Kz06"}
-    body = ''
+    body = body
 
     session.headers.update({"Content-Length": str(len(body))})
     response = session.post(url=endpoint, data=body.encode('utf-8'), verify=True)
@@ -76,6 +76,6 @@ def send_request():
     print(response.text)
     return (response.text)
 
-
 if __name__ == "__main__":
-    create_body()
+    body = create_body()
+    send_request(body=body)
