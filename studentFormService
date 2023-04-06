@@ -1,0 +1,79 @@
+import datetime
+import psycopg2
+from psycopg2 import Error
+from config import bd
+from spyne import Application, rpc, ServiceBase, Unicode, Integer, Iterable
+from lxml import etree
+from spyne.protocol.soap import Soap11
+from spyne.protocol.json import JsonDocument
+from spyne.server.wsgi import WsgiApplication
+
+
+class StudentsFormsService(ServiceBase):
+    @rpc(Unicode,Unicode,Unicode,Unicode,Unicode,Unicode,Unicode,Unicode,Unicode,Unicode,Unicode,Unicode,Unicode, _returns=Unicode)
+    def post_students(ctx, FirstName, LastName,  BirthDate,   PassportSeries, PassportNumber, 
+                           PassportWhoGive, PassportDateGive, PassportDepartmentCode, 
+                           PassportAddressString=None,MiddleName=None,PhoneNumber=None, 
+                           Email=None,BirthPlace=None):
+        
+        save_to_db('form', FirstName=FirstName, LastName=LastName, BirthDate=BirthDate,   
+                           PassportSeries=PassportSeries, PassportNumber=PassportNumber, 
+                           PassportWhoGive=PassportWhoGive, PassportDateGive=PassportDateGive, 
+                           PassportDepartmentCode=PassportDepartmentCode, 
+                           PassportAddressString=PassportAddressString, MiddleName=MiddleName,
+                           PhoneNumber=PhoneNumber, Email=Email, BirthPlace=BirthPlace)
+        # print(etree.tostring(ctx.in_document, encoding="UTF-8",pretty_print=True))
+        return 'OK'
+        
+        
+    @rpc(Unicode,Unicode,Unicode,Unicode,Unicode, _returns=Unicode)
+    def post_data(ctx, Student, StudentPassport, Customer, CustomerPassport, Study):
+        
+        print(ctx.in_document)
+        print(Student)
+        print(type(Student))
+        # print(etree.tostring(ctx.in_document, encoding="UTF-8",pretty_print=True))
+        return 'OK'
+   
+def save_to_db(table, **fields):
+    try:
+        # Подключение к базе данных
+        connection = psycopg2.connect(user=bd['donsitest']['user'],
+                                      password=bd['donsitest']['password'],
+                                      host=bd['donsitest']['host'],
+                                      port=bd['donsitest']['port'],
+                                      database=bd['donsitest']['database'])
+        cursor = connection.cursor()
+        keys_s = (f'{str(list(fields))[1:-1]}')
+        values_s = (f'{str(list(fields.values()))[1:-1]}')
+        insert_request = "INSERT INTO " + table + " (" + keys_s + ")" 
+        insert_request = insert_request.replace('\'', '\"')
+        insert_request += " VALUES (" + values_s + ")"
+        print(insert_request)
+        cursor.execute(insert_request)
+        connection.commit()
+        return 'OK'
+    except (Exception, Error) as error:
+        print("Ошибка при работе с PostgreSQL", error)
+        return error
+    finally:
+        if connection:
+            cursor.close()
+            connection.close()    
+            
+            
+                 
+application = Application([StudentsFormsService],
+    tns='spyne.examples.hello',
+    in_protocol=JsonDocument(validator='soft'),
+    out_protocol=JsonDocument()
+)
+if __name__ == '__main__':
+    # You can use any Wsgi server. Here, we chose
+    # Python's built-in wsgi server but you're not
+    # supposed to use it in production.
+    from wsgiref.simple_server import make_server
+    wsgi_app = WsgiApplication(application)
+    server = make_server('0.0.0.0', 7789, wsgi_app)
+    server.serve_forever()
+
